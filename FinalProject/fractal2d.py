@@ -285,8 +285,8 @@ class Fractal2D(object):
             return x_n
         else:
             #estimating the jacobian
-            df1_dx1, df2_dx1 = (function(x_0 + np.array((h, 0))) - function(x_0 - np.array((h, 0)))) / (2 * h)
-            df1_dx2, df2_dx2 = (function(x_0 + np.array((0, h))) - function(x_0 - np.array((0, h)))) / (2 * h)
+            df1_dx1, df2_dx1 = (function(x_0 + np.array([h, 0])) - function(x_0 - np.array([h, 0]))) / (2 * h)
+            df1_dx2, df2_dx2 = (function(x_0 + np.array([0, h])) - function(x_0 - np.array([0, h]))) / (2 * h)
             jacob = np.array([[df1_dx1, df1_dx2],
                              [df2_dx1, df2_dx2]])
             if not np.any(np.isfinite(jacob)) or np.linalg.det(jacob) ==0:
