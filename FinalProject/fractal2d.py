@@ -16,9 +16,31 @@ class Fractal2D(object):
             self,
             function: Callable[[NDArray[Real]], NDArray[Real]],
             jacobian: Callable[[NDArray[Real]], NDArray[Real]] = None,
-            compile: bool = True,
+            compile: bool = True
     ) -> None:
+        """
+        
 
+        Parameters
+        ----------
+        function : Callable[[NDArray[Real]], NDArray[Real]]
+            DESCRIPTION.
+        jacobian : Callable[[NDArray[Real]], NDArray[Real]], optional
+            DESCRIPTION. The default is None.
+        compile : bool, optional
+            DESCRIPTION. The default is True.
+
+        Raises
+        ------
+        TypeError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None
+            DESCRIPTION.
+
+        """
         try:
             isinstance(function(np.zeros((2,))), np.ndarray)
             if compile is True:
@@ -38,10 +60,37 @@ class Fractal2D(object):
             self, x_0: NDArray[Real], n_iter: int = 1000, h: float = 1e-5,
             loop_tolerance: float = np.finfo(np.float64).eps, comparison_tolerance: float = 1e-9
     ) -> NDArray[np.float64]:
+        """
+        
+
+        Parameters
+        ----------
+        x_0 : NDArray[Real]
+            Initial Guess.
+        n_iter : int, optional
+            Maximum number of iterations. The default is 1000.
+        h : float, optional
+            If no jacobian is given, we call the _newton_helper_estimate_jacobian and let this be our h. 
+            The default is 1e-5.
+        loop_tolerance : float, optional
+            The tolerance of the zero points.  
+            The default is np.finfo(np.float64).eps.
+        comparison_tolerance : float, optional
+            DESCRIPTION. We never use this??
+            The default is 1e-9.
+
+        Returns
+        -------
+        NDArray[Real]
+            The zero points the initial guess converges to, if it diverges it gives nan and nan. 
+
+        """
         if self.jacobian is not None:
             x_n = self._newton_helper(self.function, self.jacobian, x_0, n_iter, loop_tolerance)
+            return x_n
         else:
             x_n = self._newton_helper_estimate_jacobian(self.function, x_0, n_iter, h, loop_tolerance)
+            return x_n
 
         if np.any(np.isnan(x_n)) or not np.linalg.norm(self.function(x_n)) < comparison_tolerance:
             warning(RuntimeWarning(f"Newton's method on {x_0} failed to converge in {n_iter} iterations."))
@@ -51,6 +100,24 @@ class Fractal2D(object):
             return x_n
 
     def newton_index(self, x0: NDArray[Real], tol: float = 1e-9, **kwargs) -> int:
+        """
+        
+
+        Parameters
+        ----------
+        x0 : NDArray[Real]
+            Initial guess. 
+        tol : float, optional
+            The tolerance of the zerovalue. The default is 1e-9.
+        **kwargs : TYPE
+            If we've got some jacobians or similar. 
+
+        Returns
+        -------
+        int
+            The index of the zero in the list. 
+
+        """
         root = self.newton_zeros(x0, **kwargs, comparison_tolerance=tol)
         for i, item in enumerate(self.zeroes):
             if np.linalg.norm(item - root) < tol or (np.any(np.isnan(item)) and np.any(np.isnan(root))):
@@ -58,7 +125,30 @@ class Fractal2D(object):
         self.zeroes.append(root)
         return len(self.zeroes) - 1
 
-    def plot(self, N, a, b, c, d, n_cpus=1):
+    def plot(self, N: int, a: float, b:float, c:float, d:float, n_cpus=1):
+        """
+        This method plots the fractal
+
+        Parameters
+        ----------
+        N : int
+            Resolution of image
+        a : float
+            starting point of x axes
+        b : float
+            end point of x axes
+        c : float
+            starting point of y  axes
+        d : float
+            ending point of y axes
+        n_cpus : TYPE, optional
+            DESCRIPTION. The default is 1. (What is this Daniel?)
+
+        Returns
+        -------
+        None.
+
+        """
 
         grid = np.array(np.meshgrid(np.linspace(a, b, N), np.linspace(c, d, N)))
         self.A = np.zeros_like(grid[0, ...])
@@ -71,6 +161,28 @@ class Fractal2D(object):
     @numba.jit(nopython=True)
     def _newton_helper(function: Callable, jacobian: Callable, x_0: NDArray[Real], n_iter: int = 10000,
                        loop_tolerance: float = np.finfo(np.float64).eps) -> NDArray[np.float64]:
+        """
+        This is used when we have a jacobian given to us. 
+
+        Parameters
+        ----------
+        function : Callable
+            the function we wish to find the zero of
+        jacobian : Callable
+            the jacobian, which we were given
+        x_0 : NDArray[Real]
+            initial guess
+        n_iter : int, optional
+            Maximum number of iterations. The default is 10000.
+        loop_tolerance : float, optional
+            Tolerance of our zeropoints. The default is np.finfo(np.float64).eps.
+
+        Returns
+        -------
+        x_n : TYPE
+            DESCRIPTION.
+
+        """
         iterations = 0
         x_n = x_0
 
@@ -85,8 +197,29 @@ class Fractal2D(object):
     @staticmethod
     @numba.jit(nopython=True)
     def _newton_helper_estimate_jacobian(function: Callable, x_0: NDArray[Real], n_iter: int = 10000,
-                                         h: float = 1e-3, loop_tolerance: float = np.finfo(np.float64).eps) -> NDArray[
-        np.float64]:
+                                         h: float = 1e-3, loop_tolerance: float = np.finfo(np.float64).eps) -> NDArray[np.float64]:
+        """
+        This is for the numerical method of calculating the Jacobian- used if no jacobian is given. 
+
+        Parameters
+        ----------
+        function : Callable
+            The function which zero we wish to find
+        x_0 : NDArray[Real]
+            Initial guess
+        n_iter : int, optional
+            Maximum number of iterations. The default is 10000.
+        h : float, optional
+            The increment in the numerical estimate of derivative. The default is 1e-3.
+        loop_tolerance : float, optional
+            The tolerance of our zeropoint. The default is np.finfo(np.float64).eps.  (question, should we change this?)
+
+        Returns
+        -------
+        x_n : NDArray[Real]
+            Our zero point.
+
+        """
         iterations = 0
         x_n = x_0
 
