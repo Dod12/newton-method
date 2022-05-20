@@ -19,8 +19,9 @@ class Fractal2D:
 
         """
         self.fcn = fcn
-        
+        self.jacob=jacob
         self.zeroes = [np.NaN]
+        
     def Jacobean(self, X: np.array, h=1.e-5):
         """
         Parameters
@@ -69,6 +70,7 @@ class Fractal2D:
             jac= self.Jacobean(x)
             if np.linalg.det(jac)==0:
                 index=f'zero {s}'
+                break
             invjac= np.linalg.inv(jac)
             x_new = x - invjac @ self.fcn(x)
             x=x_new
