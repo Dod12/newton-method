@@ -1,7 +1,6 @@
 import itertools
 from logging import warning, info
 from numbers import Real
-from types import NoneType
 from typing import Callable, Union
 
 import matplotlib.pyplot as plt
@@ -95,10 +94,10 @@ class Fractal2D(object):
         x_n = self._newton_helper(self.function, self.jacobian, x_0, n_iter, h, loop_tolerance, upper_lim, simplified)
 
         if np.any(np.isnan(x_n)) or not np.linalg.norm(self.function(x_n)) < comparison_tolerance:
-            #warning(RuntimeWarning(f"Newton's method on {x_0} failed to converge in {n_iter} iterations."))
+            # warning(RuntimeWarning(f"Newton's method on {x_0} failed to converge in {n_iter} iterations."))
             return np.array((np.nan, np.nan))
         else:
-            #info(f"Estimated root of {x_0} to {x_n}.")
+            # info(f"Estimated root of {x_0} to {x_n}.")
             return x_n
 
     def newton_index(self, x0: NDArray[Real], tol: float = 1e-9, up: float = 1e16,
@@ -165,24 +164,23 @@ class Fractal2D(object):
         grid = np.array(np.meshgrid(np.linspace(a, b, N), np.linspace(c, d, N)))
         self.A = np.zeros_like(grid[0, ...])
         for i, j in tqdm(itertools.product(range(grid.shape[1]), range(grid.shape[2])), total=N ** 2, smoothing=0):
-            self.A[i, j] = self.newton_index(grid[:, i, j], simple= simplified, up=upper_lim)
+            self.A[i, j] = self.newton_index(grid[:, i, j], simple=simplified, up=upper_lim)
         self.mesh = plt.imshow(self.A, extent=[a, b, c, d], origin="lower", aspect="equal", interpolation=None)
         plt.show(block=True)
-        
-        #ToDo: add dependance on Simplified, make some fcns to make a simplified newton method. 
+
+        # ToDo: add dependance on Simplified, make some fcns to make a simplified newton method.
 
     @staticmethod
     @numba.jit(parallel=True, cache=True)
     def _loop_helper(func: Callable, X_0: NDArray[Real], *args, **kwargs):
         res = np.zeros_like(X_0)
         for i, j in itertools.product(range(X_0.shape[1]), range(X_0.shape[2])):
-            res[:,i,j] = func(X_0[:,i,j], *args, **kwargs)
+            res[:, i, j] = func(X_0[:, i, j], *args, **kwargs)
         return res
 
-
     @staticmethod
-    #@numba.njit(fastmath=True, parallel=True)
-    def _newton_helper(function: Callable, jacobian: Union[Callable,NoneType], x_0: NDArray[Real], n_iter: int = 10000,
+    # @numba.njit(fastmath=True, parallel=True)
+    def _newton_helper(function: Callable, jacobian: Union[Callable, None], x_0: NDArray[Real], n_iter: int = 10000,
                        h: float = 1e-5, loop_tolerance: float = np.finfo(np.float64).eps,
                        upper_lim: float = 1.e8, simplified: bool = False) -> NDArray[np.float64]:
         """
@@ -230,7 +228,6 @@ class Fractal2D(object):
 
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
                 while loop_tolerance < np.linalg.norm(function(x_n)) < upper_lim and iterations < n_iter:
-
                     # Newtons method for partial derivatives
                     x_n = x_n - jacobian_inv @ function(x_n)
                     iterations += 1
@@ -243,14 +240,13 @@ class Fractal2D(object):
             df1_dx2, df2_dx2 = (function(x_0 + np.array([0, h])) - function(x_0 - np.array([0, h]))) / (2 * h)
 
             jacobian_0 = np.array([[df1_dx1, df1_dx2],
-                                 [df2_dx1, df2_dx2]])
+                                   [df2_dx1, df2_dx2]])
 
             # Make sure that the jacobian is not singular
             if np.all(np.isfinite(jacobian_0)) and np.linalg.det(jacobian_0) != 0:
 
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
                 while loop_tolerance < np.linalg.norm(function(x_n)) < upper_lim and iterations < n_iter:
-
                     # Calculate the inverse jacobian
                     jacobian_inv = np.linalg.inv(jacobian_0)
 
