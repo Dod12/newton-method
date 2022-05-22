@@ -27,8 +27,6 @@ def plot_cpp(N, a, b, c, d):
 
 
 fractal1 = Fractal2D(function=function1, jacobian=jacobian1, compile=True)
-# fractal2 = Fractal2D_old(function=function2, jacobian=jacobian2)
-# print("First equation")
 fractal1.plot(100, -1, 1, -1, 1)
 
 

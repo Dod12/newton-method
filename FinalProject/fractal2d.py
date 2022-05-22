@@ -1,13 +1,13 @@
 import itertools
 from logging import warning, info
 from numbers import Real
-from typing import Callable, Union
+from typing import Callable, Union, Tuple
 
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
 from numpy.typing import NDArray
-from tqdm.auto import tqdm
+import tqdm.auto as tqdm
 
 
 class Fractal2D(object):
@@ -16,124 +16,83 @@ class Fractal2D(object):
             self,
             function: Callable[[NDArray[Real]], NDArray[Real]],
             jacobian: Callable[[NDArray[Real]], NDArray[Real]] = None,
-            compile: bool = True
+            compile: bool = True, n_iter: int = 10000, h: float = 1e-5,
+            loop_tolerance: float = np.finfo(np.float64).eps,
+            comp_tolerance: float = 1e-9, simplified: bool = False
     ) -> None:
         """
-        
+        Class for creating fractal plots based on Newton's method.
+
+        This class acts as a container for functions and can be used to estimate the zeros of a function R^2 -> R^2.
+        The function and it's derivative (optionally) are passed to the constructor and can be compiled just in time for
+        greater speed.
 
         Parameters
         ----------
         function : Callable[[NDArray[Real]], NDArray[Real]]
-            DESCRIPTION.
+            Function to use for estimation of zeros. This is a python function that takes a numpy array and returns a
+            numpy array.
         jacobian : Callable[[NDArray[Real]], NDArray[Real]], optional
-            DESCRIPTION. The default is None.
+            Jacobian for the function. This should be a python function taking a 2x1 array and return a 2x2 array of the
+            partial derivatives of the function. The default is None, estimating the jacobian using the finite
+             differences method.
         compile : bool, optional
-            DESCRIPTION. The default is True.
+            Whether to compile the functions defining the function and jacobian. This leads to a massive speedup of up
+            to 1000 times. The default is True.
+        n_iter : int, optional
+            Maximum number of iterations to run before returning the zero. Increasing this can yield better accuracy
+            for some functions. The default is 10000.
+        h : float, optional
+            Finite difference to use when estimating jacobian. Defaults to 1e-5, providing good accuracy and robustness
+            to floating-point errors. Only used when jacobian is None.
+        loop_tolerance : float, optional
+            Tolerance for determining convergence of Newton's method. The default is machine epsilon (usually ≈ 1e-16).
+        comp_tolerance : float, optional
+            Tolerance for determining whether a point is a zero. The default is 1e-9.
+        simplified : bool, optional
+            Whether to use the simplified Newton's method. Default is False, not using simplified method. See Notes for
+            descriptions of what simplified method entails.
 
         Raises
         ------
         TypeError
-            DESCRIPTION.
+            If the function or jacobian can't compute some simple test cases.
 
         Returns
         -------
-        None
-            DESCRIPTION.
-
+        Fractal2D :
+            self
         """
-        try:
-            isinstance(function(np.zeros((2,))), np.ndarray)
-            if compile is True:
-                function = numba.jit(function, nopython=True, nogil=True, fastmath=True)
+        if compile is True:
+            function = numba.jit(function, nopython=True, nogil=True, fastmath=True)
             if jacobian is not None:
-                isinstance(jacobian(np.zeros((2,))), np.ndarray)
-                if compile is True:
-                    jacobian = numba.jit(jacobian, nopython=True, nogil=True, fastmath=True)
-        except TypeError as e:
-            raise TypeError(f"Function must take a tuple of two numbers and return a single real. Got: {e}")
-        else:
-            self.function = function
-            self.jacobian = jacobian
-            self.zeroes = list()
+                jacobian = numba.jit(jacobian, nopython=True, nogil=True, fastmath=True)
 
-    def newton_zeros(
-            self, x_0: NDArray[Real], n_iter: int = 10000, h: float = 1e-5,
-            loop_tolerance: float = np.finfo(np.float64).eps, comparison_tolerance: float = 1e-9,
-            upper_lim: float = 1e9, simplified: bool = False) -> NDArray[np.float64]:
-        """
-        Gives us the zeroes, to be put in the newton_index.
+        out = function(np.zeros((2,)))
+        if not isinstance(out, np.ndarray):
+            raise TypeError(f"Function must return a numpy array of shape (2,), not {type(out)}.")
+        elif out.shape != (2,):
+            raise TypeError(f"Function must return a numpy array of shape (2,), not {out.shape}.")
 
-        Parameters
-        ----------
-        x_0 : NDArray[Real]
-            Initial Guess.
-        n_iter : int, optional
-            Maximum number of iterations. The default is 1000.
-        h : float, optional
-            If no jacobian is given, we call the _newton_helper_estimate_jacobian and let this be our h. 
-            The default is 1e-5.
-        loop_tolerance : float, optional
-            The tolerance of the zero points.  
-            The default is np.finfo(np.float64).eps.
-        comparison_tolerance : float, optional
-            If the norm of the function at 
-            The default is 1.e-9.
-        upper_lim : float, optional
-            Upper limit of function value for simplified newton method
-            The default is 1.e+8
-        simplified: bool, optional
-            Determines whether we use the simplified newton method
-            The default is False
+        if jacobian is not None:
+            out = jacobian(np.zeros((2,)))
+            if not isinstance(out, np.ndarray):
+                raise TypeError(f"Jacobian must return a numpy array of shape (2,), not {type(out)}.")
+            elif out.shape != (2, 2):
+                raise TypeError(f"Jacobian must return a numpy array of shape (2,2), not {out.shape}.")
+        self.function = function
+        self.jacobian = jacobian
+        self.zeros = list()
+        self.n_iter = n_iter
+        self.h = h
+        self.loop_tolerance = loop_tolerance
+        self.comp_tolerance = comp_tolerance
+        self.simplified = simplified
+        self.A = None
+        self.iters = None
+        self.roots = None
 
-        Returns
-        -------
-        NDArray[Real]
-            The zero points the initial guess converges to, if it diverges it gives nan and nan. 
-
-        """
-        x_n = self._newton_helper(self.function, self.jacobian, x_0, n_iter, h, loop_tolerance, upper_lim, simplified)
-
-        if np.any(np.isnan(x_n)) or not np.linalg.norm(self.function(x_n)) < comparison_tolerance:
-            # warning(RuntimeWarning(f"Newton's method on {x_0} failed to converge in {n_iter} iterations."))
-            return np.array((np.nan, np.nan))
-        else:
-            # info(f"Estimated root of {x_0} to {x_n}.")
-            return x_n
-
-    def newton_index(self, x0: NDArray[Real], tol: float = 1e-9, up: float = 1e16,
-                     simple: bool = False, **kwargs) -> int:
-        """
-        This makes an index of the zeroes we use when making the fractal
-
-        Parameters
-        ----------
-        x0 : NDArray[Real]
-            Initial guess. 
-        tol : float, optional
-            The tolerance of the zerovalue. The default is 1e-9.
-        up : float, optional
-            if simplified newton method is used, this is upper limit
-            The default is 1.e+8
-        simple: bool, optional
-            if simplified newton method is wanted, set this to True
-            The default is False. 
-        **kwargs : TYPE
-            If we've got some jacobians or similar. 
-
-        Returns
-        -------
-        int
-            The index of the zero in the list. 
-
-        """
-        root = self.newton_zeros(x0, **kwargs, comparison_tolerance=tol, upper_lim=up, simplified=simple)
-        for i, item in enumerate(self.zeroes):
-            if np.linalg.norm(item - root) < tol or (np.any(np.isnan(item)) and np.any(np.isnan(root))):
-                return i
-        self.zeroes.append(root)
-        return len(self.zeroes) - 1
-
-    def plot(self, N: int, a: float, b: float, c: float, d: float, simplified: bool = False, upper_lim=+np.inf):
+    def plot(self, N: int, a: float, b: float, c: float, d: float):
         """
         This method plots the fractal
 
@@ -149,11 +108,6 @@ class Fractal2D(object):
             starting point of y  axes
         d : float
             ending point of y axes
-        simplified: Bool
-            If we wish to use the simplified newton method, set this as True. 
-            The default is False. 
-        upper_lim: Float
-            If simplified newton method is used, this is upper limit before it breaks away.
 
         Returns
         -------
@@ -161,54 +115,115 @@ class Fractal2D(object):
 
         """
 
+        # Define the grid of points to calculate and transform them to an array.
         grid = np.array(np.meshgrid(np.linspace(a, b, N), np.linspace(c, d, N)))
+        self.roots = np.zeros_like(grid)
+        self.iters = np.zeros_like(grid[0, ...])
         self.A = np.zeros_like(grid[0, ...])
-        for i, j in tqdm(itertools.product(range(grid.shape[1]), range(grid.shape[2])), total=N ** 2, smoothing=0):
-            self.A[i, j] = self.newton_index(grid[:, i, j], simple=simplified, up=upper_lim)
+        self.roots, self.iters = self._loop_helper(self._newton_helper, self.function, grid, jacobian=self.jacobian,
+                                                   n_iter=self.n_iter, h=self.h, loop_tolerance=self.loop_tolerance,
+                                                   comp_tolerance=self.comp_tolerance, simplified=self.simplified)
+
+        self.A = self.newton_index(self.roots)
         self.mesh = plt.imshow(self.A, extent=[a, b, c, d], origin="lower", aspect="equal", interpolation=None)
         plt.show(block=True)
 
         # ToDo: add dependance on Simplified, make some fcns to make a simplified newton method.
 
-    @staticmethod
-    @numba.jit(parallel=True, cache=True)
-    def _loop_helper(func: Callable, X_0: NDArray[Real], *args, **kwargs):
-        res = np.zeros_like(X_0)
-        for i, j in itertools.product(range(X_0.shape[1]), range(X_0.shape[2])):
-            res[:, i, j] = func(X_0[:, i, j], *args, **kwargs)
-        return res
+    def newton_index(self, roots: NDArray[Real]) -> NDArray[np.int64]:
+
+        indexes = np.zeros(roots.shape[1:])
+
+        for i, j in tqdm.tqdm(itertools.product(range(roots.shape[1]), range(roots.shape[2])),
+                              total=roots.shape[1] * roots.shape[2], smoothing=0, desc="Calculating indices"):
+            root = roots[:, i, j]
+            for k, zero in enumerate(self.zeros):
+                if np.allclose(root, zero, equal_nan=True):
+                    indexes[i, j] = k
+                    break
+            else:
+                self.zeros.append(root)
+                indexes[i, j] = len(self.zeros) - 1
+        return indexes
 
     @staticmethod
-    # @numba.njit(fastmath=True, parallel=True)
-    def _newton_helper(function: Callable, jacobian: Union[Callable, None], x_0: NDArray[Real], n_iter: int = 10000,
-                       h: float = 1e-5, loop_tolerance: float = np.finfo(np.float64).eps,
-                       upper_lim: float = 1.e8, simplified: bool = False) -> NDArray[np.float64]:
+    # @numba.njit(parallel=True, cache=True)
+    def _loop_helper(ufunc: Callable, function: Union[Callable, None], X: NDArray[Real],
+                     jacobian: Union[Callable, None] = None, n_iter: int = 10000, h: float = 1e-5,
+                     loop_tolerance: float = np.finfo(np.float64).eps, comp_tolerance: float = 1e-9,
+                     simplified: bool = False) -> Tuple[NDArray[np.float64], NDArray[np.int64]]:
         """
-        This is used when we have a jacobian given to us. 
+        Helper function to call a function over an array of elements using parallelism.
+
+        Parameters
+        ----------
+        ufunc : Callable
+            Function to call
+        X : NDArray[Real]
+            Array to iterate over the last two dimensions.
+        args
+            Positional arguments to `func`.
+        kwargs
+            Keyword arguments to `func`.
+
+        Returns
+        -------
+        Tuple[NDArray[np.float64], NDArray[np.int64]] :
+            Array of results.
+        """
+
+        zeros = np.zeros_like(X)
+        iters = np.zeros_like(X)
+        for i, j in tqdm.tqdm(itertools.product(range(X.shape[1]), range(X.shape[2])),
+                              total=X.shape[1] * X.shape[2], smoothing=0, desc="Computing zeros"):
+            zeros[:, i, j], iters[:, i, j] = ufunc(function, X[:, i, j], jacobian, n_iter, h, loop_tolerance,
+                                                   comp_tolerance, simplified)
+        return zeros, iters
+
+    @staticmethod
+    # @numba.njit(fastmath=True)
+    def _newton_helper(function: Callable, x_0: NDArray[Real], jacobian: Union[Callable, None] = None,
+                       n_iter: int = 10000, h: float = 1e-5, loop_tolerance: float = np.finfo(np.float64).eps,
+                       comp_tolerance: float = 1e-9, simplified: bool = False) -> Tuple[
+        NDArray[np.float64], NDArray[np.int64]]:
+        """
+        Implement Newton's method to estimate zeros.
+
+        Notes
+        -----
+        This function treats four different cases separately. The simplified method computes and inverses the jacobian
+        once for the initial value and uses this for Newton's method. This brings a speedup because estimating and
+        inverting the jacobian is very expensive computationally. If the jacobian is None, the jacobian matrix is
+        estimated using the finite differences method.
 
         Parameters
         ----------
         function : Callable
-            the function we wish to find the zero of
-        jacobian : Callable
-            the jacobian, which we were given
+            Function to estimate zeros for.
         x_0 : NDArray[Real]
-            initial guess
+            Initial guess of the zero-point to start estimation from.
+        jacobian : Callable, optional
+            Function defining the jacobian matrix for the function we wish to estimate zeros for. Defaults to None,
+            using finite differences to estimate the jacobian matrix.
         n_iter : int, optional
-            Maximum number of iterations. The default is 10000.
+            Maximum number of iterations to run before returning the zero. Increasing this can yield better accuracy
+            for some functions. The default is 10000.
+        h : float, optional
+            Finite difference to use when estimating jacobian. Defaults to 1e-5, providing good accuracy and robustness
+            to floating-point errors. Only used when jacobian is None.
         loop_tolerance : float, optional
-            Tolerance of our zeropoints. The default is np.finfo(np.float64).eps.
-        upper_lim : float, optional
-            upper limit the fcn can grow to before we break off. The default is 1.e+8
+            Tolerance for determining convergence of Newton's method. The default is machine epsilon (usually ≈ 1e-16).
+        comp_tolerance : float, optional
+            Tolerance for determining whether a point is a zero. The default is 1e-9.
         simplified : bool, optional
-            Determines whether or not we use the simplified newto method
-            The default is False
+            Whether to use the simplified Newton's method. Default is False, not using simplified method. See Notes for
+            descriptions of what simplified method entails.
 
         Returns
         -------
-        x_n : TYPE
-            DESCRIPTION.
-
+        x_n : Tuple[NDArray[np.float64], NDArray[np.int64]]
+            Zero point for function estimated from the initial point x_0 and the number of iterations for convergence.
+            If Newton's method fails to converge, [np.nan, np.nan] is returned.
         """
 
         iterations: int = 0
@@ -227,7 +242,7 @@ class Fractal2D(object):
                 jacobian_inv = np.linalg.inv(jacobian_0)
 
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-                while loop_tolerance < np.linalg.norm(function(x_n)) < upper_lim and iterations < n_iter:
+                while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
                     # Newtons method for partial derivatives
                     x_n = x_n - jacobian_inv @ function(x_n)
                     iterations += 1
@@ -246,7 +261,7 @@ class Fractal2D(object):
             if np.all(np.isfinite(jacobian_0)) and np.linalg.det(jacobian_0) != 0:
 
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-                while loop_tolerance < np.linalg.norm(function(x_n)) < upper_lim and iterations < n_iter:
+                while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
                     # Calculate the inverse jacobian
                     jacobian_inv = np.linalg.inv(jacobian_0)
 
@@ -258,14 +273,14 @@ class Fractal2D(object):
         elif not simplified and jacobian is not None:
 
             # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-            while loop_tolerance < np.linalg.norm(function(x_n)) < upper_lim and iterations < n_iter:
+            while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
 
                 # Calculate the jacobian and function value only once
                 jacobian_n = jacobian(x_n)
                 f_n = function(x_n)
 
                 # Make sure that all values are finite and the jacobian is not singular
-                if not (np.any(np.isfinite(x_n)) and np.any(np.isfinite(jacobian_n)) and np.any(
+                if not (np.all(np.isfinite(x_n)) and np.all(np.isfinite(jacobian_n)) and np.all(
                         np.isfinite(f_n))) or np.linalg.det(jacobian_n) == 0:
                     break
 
@@ -277,7 +292,7 @@ class Fractal2D(object):
         elif not simplified and jacobian is None:
 
             # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-            while loop_tolerance < np.linalg.norm(function(x_n)) < upper_lim and iterations < n_iter:
+            while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
 
                 # Pre-calculate function value
                 f_n = function(x_n)
@@ -300,4 +315,7 @@ class Fractal2D(object):
                 x_n = x_n - np.linalg.inv(jacobian_n) @ f_n
                 iterations += 1
 
-        return x_n
+        if np.any(np.isnan(x_n)) or not np.linalg.norm(function(x_n)) < comp_tolerance:
+            return np.array((np.nan, np.nan)), iterations
+        else:
+            return x_n, iterations
