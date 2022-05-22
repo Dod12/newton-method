@@ -236,15 +236,21 @@ class Fractal2D(object):
             jacobian_0 = jacobian(x_0)
 
             # Make sure that the jacobian is not singular
-            if np.all(np.isfinite(jacobian_0)) and np.linalg.det(jacobian_0) != 0:
+            if np.linalg.det(jacobian_0) != 0:
 
                 # Calculate the inverse jacobian
                 jacobian_inv = np.linalg.inv(jacobian_0)
 
+                # Preallocate some values
+                f_n = function(x_n)
+
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-                while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
+                while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
                     # Newtons method for partial derivatives
                     x_n = x_n - jacobian_inv @ function(x_n)
+
+                    # Calculate next iteration's f_n value to avoid extra function call
+                    f_n = function(x_n)
                     iterations += 1
 
         # Simplified algorithm without jacobian matrix.
@@ -258,61 +264,72 @@ class Fractal2D(object):
                                    [df2_dx1, df2_dx2]])
 
             # Make sure that the jacobian is not singular
-            if np.all(np.isfinite(jacobian_0)) and np.linalg.det(jacobian_0) != 0:
+            if np.linalg.det(jacobian_0) != 0:
+
+                # Calculate the inverse jacobian
+                jacobian_inv = np.linalg.inv(jacobian_0)
+
+                # Preallocate some values
+                f_n = function(x_n)
 
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-                while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
-                    # Calculate the inverse jacobian
-                    jacobian_inv = np.linalg.inv(jacobian_0)
-
+                while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
                     # Newtons method for partial derivatives
                     x_n = x_n - jacobian_inv @ function(x_n)
+
+                    # Calculate next iteration's f_n value to avoid extra function call
+                    f_n = function(x_n)
                     iterations += 1
 
         # Normal Newton's algorithm for estimating zeros with analytic jacobian
         elif not simplified and jacobian is not None:
 
+            # Preallocate some values
+            f_n = function(x_n)
+
             # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-            while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
+            while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
 
                 # Calculate the jacobian and function value only once
                 jacobian_n = jacobian(x_n)
-                f_n = function(x_n)
 
                 # Make sure that all values are finite and the jacobian is not singular
-                if not (np.all(np.isfinite(x_n)) and np.all(np.isfinite(jacobian_n)) and np.all(
-                        np.isfinite(f_n))) or np.linalg.det(jacobian_n) == 0:
+                if np.linalg.det(jacobian_n) == 0:
                     break
 
                 # Newtons method for partial derivatives
                 x_n = x_n - np.linalg.inv(jacobian_n) @ f_n
+
+                # Calculate next iteration's f_n value to avoid extra function call
+                f_n = function(x_n)
                 iterations += 1
 
         # Normal Newton's algorithm for estimating zeros with estimated jacobian
         elif not simplified and jacobian is None:
 
+            # Preallocate some values
+            f_n = function(x_n)
+            h_x1 = np.array((h, 0))
+            h_x2 = np.array((0, h))
+
             # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
-            while loop_tolerance < np.linalg.norm(function(x_n)) and iterations < n_iter:
-
-                # Pre-calculate function value
-                f_n = function(x_n)
-
-                # Make sure that all entries are finite
-                if not (np.any(np.isfinite(x_n)) and np.any(np.isfinite(f_n))):
-                    break
+            while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
 
                 # Let's estimate the jacobian matrix
-                df1_dx1, df2_dx1 = (function(x_n + np.array((h, 0))) - function(x_n - np.array((h, 0)))) / (2 * h)
-                df1_dx2, df2_dx2 = (function(x_n + np.array((0, h))) - function(x_n - np.array((0, h)))) / (2 * h)
+                df1_dx1, df2_dx1 = (function(x_n + h_x1) - function(x_n - h_x1)) / (2 * h)
+                df1_dx2, df2_dx2 = (function(x_n + h_x2) - function(x_n - h_x2)) / (2 * h)
                 jacobian_n = np.array([[df1_dx1, df1_dx2],
                                        [df2_dx1, df2_dx2]])
 
                 # If the jacobian is singular, Newton's method fails to converge
-                if not np.any(np.isfinite(jacobian_n)) or np.linalg.det(jacobian_n) == 0:
+                if np.linalg.det(jacobian_n) == 0:
                     break
 
                 # Newtons method for partial derivatives
                 x_n = x_n - np.linalg.inv(jacobian_n) @ f_n
+
+                # Calculate next iteration's f_n value to avoid extra function call
+                f_n = function(x_n)
                 iterations += 1
 
         if np.any(np.isnan(x_n)) or not np.linalg.norm(function(x_n)) < comp_tolerance:
