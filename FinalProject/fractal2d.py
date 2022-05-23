@@ -14,10 +14,10 @@ class Fractal2D(object):
 
     def __init__(
             self,
-            function: Callable[[NDArray[Real]], NDArray[Real]],
-            jacobian: Callable[[NDArray[Real]], NDArray[Real]] = None,
+            function: Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.float64]],
+            jacobian: Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.float64]] = None,
             compile: bool = True, n_iter: int = 10000, h: float = 1e-5,
-            loop_tolerance: float = np.finfo(np.float64).eps,
+            loop_tolerance: float = np.finfo(np.float64).eps * 1e3,
             comp_tolerance: float = 1e-9, simplified: bool = False
     ) -> None:
         """
@@ -68,14 +68,14 @@ class Fractal2D(object):
             if jacobian is not None:
                 jacobian = numba.jit(jacobian, nopython=True, nogil=True, fastmath=True)
 
-        out = function(np.zeros((2,)))
+        out = function(np.zeros((2,)), np.zeros((2,)))
         if not isinstance(out, np.ndarray):
             raise TypeError(f"Function must return a numpy array of shape (2,), not {type(out)}.")
         elif out.shape != (2,):
             raise TypeError(f"Function must return a numpy array of shape (2,), not {out.shape}.")
 
         if jacobian is not None:
-            out = jacobian(np.zeros((2,)))
+            out = jacobian(np.zeros((2,)), np.zeros((2, 2)))
             if not isinstance(out, np.ndarray):
                 raise TypeError(f"Jacobian must return a numpy array of shape (2,), not {type(out)}.")
             elif out.shape != (2, 2):
@@ -172,16 +172,16 @@ class Fractal2D(object):
         """
 
         zeros = np.zeros_like(X)
-        iters = np.zeros_like(X)
+        iters = np.zeros_like(X[0,...])
         for i, j in tqdm.tqdm(itertools.product(range(X.shape[1]), range(X.shape[2])),
                               total=X.shape[1] * X.shape[2], smoothing=0, desc="Computing zeros"):
-            zeros[:, i, j], iters[:, i, j] = ufunc(function, X[:, i, j], jacobian, n_iter, h, loop_tolerance,
-                                                   comp_tolerance, simplified)
+            zeros[:, i, j], iters[i, j] = ufunc(function, X[:, i, j], jacobian, n_iter, h, loop_tolerance,
+                                                comp_tolerance, simplified)
         return zeros, iters
 
     @staticmethod
-    def _newton_helper(function: Callable, x_0: NDArray[Real], jacobian: Union[Callable, None] = None,
-                       n_iter: int = 10000, h: float = 1e-5, loop_tolerance: float = np.finfo(np.float64).eps,
+    def _newton_helper(function: Callable, x_0: NDArray[np.float64], jacobian: Union[Callable, None] = None,
+                       n_iter: int = 10000, h: float = 1e-5, loop_tolerance: float = np.finfo(np.float64).eps/2,
                        comp_tolerance: float = 1e-9, simplified: bool = False) -> Tuple[
         NDArray[np.float64], NDArray[np.int64]]:
         """
@@ -225,71 +225,75 @@ class Fractal2D(object):
         """
 
         iterations: int = 0
+
+        # Preallocate output array for computing function and jacobian since this requires malloc
         x_n = x_0
+        f_n = np.zeros((2,))  # Output array for function values
+        f_h = np.zeros((2,))  # Output array for finite differences
+        jacobian_n = np.zeros((2, 2))
 
         # Simplified algorithm creates the inverted jacobian once for the initial guess and uses this for all iterations
         if simplified and jacobian is not None:
 
             # Compute the inverted jacobian
-            jacobian_0 = jacobian(x_0)
+            jacobian(x_0, jacobian_n)
 
             # Make sure that the jacobian is not singular
-            if np.linalg.det(jacobian_0) != 0:
+            if np.linalg.det(jacobian_n) != 0:
 
                 # Calculate the inverse jacobian
-                jacobian_inv = np.linalg.inv(jacobian_0)
+                jacobian_inv = np.linalg.inv(jacobian_n)
 
                 # Preallocate some values
-                f_n = function(x_n)
+                function(x_n, f_n)
 
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
                 while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
                     # Newtons method for partial derivatives
-                    x_n = x_n - jacobian_inv @ function(x_n)
+                    x_n = x_n - jacobian_inv @ f_n
 
                     # Calculate next iteration's f_n value to avoid extra function call
-                    f_n = function(x_n)
+                    function(x_n, f_n)
                     iterations += 1
 
         # Simplified algorithm without jacobian matrix.
         elif simplified and jacobian is None:
 
-            # Let's estimate the jacobian matrix
-            df1_dx1, df2_dx1 = (function(x_0 + np.array([h, 0])) - function(x_0 - np.array([h, 0]))) / (2 * h)
-            df1_dx2, df2_dx2 = (function(x_0 + np.array([0, h])) - function(x_0 - np.array([0, h]))) / (2 * h)
+            # Preallocate some values
+            function(x_n, f_n)
+            h_x1 = np.array((h, 0))
+            h_x2 = np.array((0, h))
 
-            jacobian_0 = np.array([[df1_dx1, df1_dx2],
-                                   [df2_dx1, df2_dx2]])
+            # Let's estimate the jacobian matrix
+            jacobian_n[:, 0] = (function(x_n + h_x1, f_h) - f_n) / (h)
+            jacobian_n[:, 1] = (function(x_n + h_x2, f_h) - f_n) / (h)
 
             # Make sure that the jacobian is not singular
-            if np.linalg.det(jacobian_0) != 0:
+            if np.linalg.det(jacobian_n) != 0:
 
                 # Calculate the inverse jacobian
-                jacobian_inv = np.linalg.inv(jacobian_0)
-
-                # Preallocate some values
-                f_n = function(x_n)
+                jacobian_inv = np.linalg.inv(jacobian_n)
 
                 # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
                 while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
                     # Newtons method for partial derivatives
-                    x_n = x_n - jacobian_inv @ function(x_n)
+                    x_n = x_n - jacobian_inv @ f_n
 
                     # Calculate next iteration's f_n value to avoid extra function call
-                    f_n = function(x_n)
+                    function(x_n, f_n)
                     iterations += 1
 
         # Normal Newton's algorithm for estimating zeros with analytic jacobian
         elif not simplified and jacobian is not None:
 
             # Preallocate some values
-            f_n = function(x_n)
+            function(x_n, f_n)
 
             # Iterate until newton method converges, diverges above upper limit, or exceeds max iterations
             while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
 
                 # Calculate the jacobian and function value only once
-                jacobian_n = jacobian(x_n)
+                jacobian(x_n, jacobian_n)
 
                 # Make sure that all values are finite and the jacobian is not singular
                 if np.linalg.det(jacobian_n) == 0:
@@ -299,14 +303,14 @@ class Fractal2D(object):
                 x_n = x_n - np.linalg.inv(jacobian_n) @ f_n
 
                 # Calculate next iteration's f_n value to avoid extra function call
-                f_n = function(x_n)
+                function(x_n, f_n)
                 iterations += 1
 
         # Normal Newton's algorithm for estimating zeros with estimated jacobian
         elif not simplified and jacobian is None:
 
             # Preallocate some values
-            f_n = function(x_n)
+            function(x_n, f_n)
             h_x1 = np.array((h, 0))
             h_x2 = np.array((0, h))
 
@@ -314,10 +318,8 @@ class Fractal2D(object):
             while loop_tolerance < np.sqrt(f_n[0] ** 2 + f_n[1] ** 2) and iterations < n_iter:
 
                 # Let's estimate the jacobian matrix
-                df1_dx1, df2_dx1 = (function(x_n + h_x1) - function(x_n - h_x1)) / (2 * h)
-                df1_dx2, df2_dx2 = (function(x_n + h_x2) - function(x_n - h_x2)) / (2 * h)
-                jacobian_n = np.array([[df1_dx1, df1_dx2],
-                                       [df2_dx1, df2_dx2]])
+                jacobian_n[:, 0] = (function(x_n + h_x1, f_h) - f_n) / (h)
+                jacobian_n[:, 1] = (function(x_n + h_x2, f_h) - f_n) / (h)
 
                 # If the jacobian is singular, Newton's method fails to converge
                 if np.linalg.det(jacobian_n) == 0:
@@ -327,10 +329,10 @@ class Fractal2D(object):
                 x_n = x_n - np.linalg.inv(jacobian_n) @ f_n
 
                 # Calculate next iteration's f_n value to avoid extra function call
-                f_n = function(x_n)
+                function(x_n, f_n)
                 iterations += 1
 
-        if np.any(np.isnan(x_n)) or not np.linalg.norm(function(x_n)) < comp_tolerance:
+        if np.any(np.isnan(x_n)) or not np.linalg.norm(f_n) < comp_tolerance:
             return np.array((np.nan, np.nan)), iterations
         else:
             return x_n, iterations
