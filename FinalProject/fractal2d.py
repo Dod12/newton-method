@@ -147,7 +147,6 @@ class Fractal2D(object):
         return indexes
 
     @staticmethod
-    # @numba.njit(parallel=True, cache=True)
     def _loop_helper(ufunc: Callable, function: Union[Callable, None], X: NDArray[Real],
                      jacobian: Union[Callable, None] = None, n_iter: int = 10000, h: float = 1e-5,
                      loop_tolerance: float = np.finfo(np.float64).eps, comp_tolerance: float = 1e-9,
@@ -181,7 +180,6 @@ class Fractal2D(object):
         return zeros, iters
 
     @staticmethod
-    # @numba.njit(fastmath=True)
     def _newton_helper(function: Callable, x_0: NDArray[Real], jacobian: Union[Callable, None] = None,
                        n_iter: int = 10000, h: float = 1e-5, loop_tolerance: float = np.finfo(np.float64).eps,
                        comp_tolerance: float = 1e-9, simplified: bool = False) -> Tuple[

@@ -31,7 +31,7 @@ def fcn_3(X: np.ndarray) -> np.ndarray:
     ])
 
 
-fractal3 = Fractal2D(function=fcn_3)
+fractal3 = Fractal2D(function=fcn_3, compile=True)
 # fractal4 = Fractal2D_old(function=fcn_3)
 # print("Second equation")
 # fractal3.plot(100,-1,1,-1,1)
