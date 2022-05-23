@@ -2,7 +2,6 @@ from FinalProject import Fractal2D, Fractal2D_old
 import numpy as np
 from logging import getLogger
 import matplotlib.pyplot as plt
-import py_newton
 
 getLogger("root").setLevel("WARNING")
 
@@ -15,15 +14,6 @@ def function1(X: np.ndarray) -> np.ndarray:
 def jacobian1(X: np.ndarray) -> np.ndarray:
     return np.array([[3 * X[0] ** 2 - 3 * X[1] ** 2, -6 * X[0] * X[1]],
                      [6 * X[0] * X[1], 3 * X[0] ** 2 - 3 * X[1] ** 2]])
-
-
-def plot_cpp(N, a, b, c, d):
-    A = py_newton.newton_grid(N, a, b, c, d)
-    plt.imshow(A, extent=[a, b, c, d], origin="lower", aspect="equal", interpolation=None)
-    plt.tight_layout()
-    plt.savefig("Images/Fig_cpp.png", dpi=500)
-    plt.show()
-    return A
 
 
 fractal1 = Fractal2D(function=function1, jacobian=jacobian1, compile=True)
