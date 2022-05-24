@@ -46,7 +46,8 @@ class Fractal2D(object):
             Finite difference to use when estimating jacobian. Defaults to 1e-5, providing good accuracy and robustness
             to floating-point errors. Only used when jacobian is None.
         loop_tolerance : float, optional
-            Tolerance for determining convergence of Newton's method. The default is machine epsilon (usually ≈ 1e-16).
+            Tolerance for determining convergence of Newton's method. The default is 1000 times the machine epsilon
+             (usually ≈ 1e-13).
         comp_tolerance : float, optional
             Tolerance for determining whether a point is a zero. The default is 1e-9.
         simplified : bool, optional
@@ -60,7 +61,7 @@ class Fractal2D(object):
 
         Returns
         -------
-        Fractal2D :
+        Fractal2D
             self
         """
         if compile is True:
@@ -111,11 +112,13 @@ class Fractal2D(object):
         show_iterations : bool
             Plot fractal with iterations mask overlaid.
         C_backend : int
-            Use optimized C backend for Newton's method. This is around 36 times faster.
+            Use optimized C backend for Newton's method. This is around 416 times faster. Requires binary module
+            from https://github.com/Dod12/newton-cpp.
 
         Returns
         -------
-        matplotlib.figure.Figure : Figure instance of plot.
+        matplotlib.figure.Figure
+            Figure instance of plot.
         """
 
         # Define the grid of points to calculate and transform them to an array.
@@ -146,9 +149,20 @@ class Fractal2D(object):
         self.figure.show()
         return self.figure
 
-        # ToDo: add dependance on Simplified, make some fcns to make a simplified newton method.
+    def newton_index(self, roots: NDArray[Real]) -> NDArray[np.int]:
+        """
+        Function for assigninng index values to roots of the function.
 
-    def newton_index(self, roots: NDArray[Real]) -> NDArray[np.int64]:
+        Parameters
+        ----------
+        roots : NDArray[Real]
+            Array of roots to use for determining indices.
+
+        Returns
+        -------
+        NDArray[np.int]
+            Array of indices in the `self.zeros` list corresponding to the root at that point.
+        """
 
         indexes = np.zeros(roots.shape[1:])
 
@@ -165,35 +179,49 @@ class Fractal2D(object):
         return indexes
 
     @staticmethod
-    def _loop_helper(ufunc: Callable, function: Union[Callable, None], X: NDArray[Real],
+    def _loop_helper(func: Callable, function:Callable, X: NDArray[Real],
                      jacobian: Union[Callable, None] = None, n_iter: int = 10000, h: float = 1e-5,
                      loop_tolerance: float = np.finfo(np.float64).eps, comp_tolerance: float = 1e-9,
                      simplified: bool = False) -> Tuple[NDArray[np.float64], NDArray[np.uint8]]:
         """
-        Helper function to call a function over an array of elements.
+        Wrapper for looping over the grid X and applying the function `func` to each point along the last two axes.
 
         Parameters
         ----------
-        ufunc : Callable
-            Function to call
+        func : Callable
+            Function to call for each element.
+        function : Callable
+            Function to estimate zeros for.
         X : NDArray[Real]
-            Array to iterate over the last two dimensions.
-        args
-            Positional arguments to `func`.
-        kwargs
-            Keyword arguments to `func`.
+            Matrix of initial guesses to loop over.
+        jacobian : Callable, optional
+            Function defining the jacobian matrix for the function we wish to estimate zeros for. Defaults to None,
+            using finite differences to estimate the jacobian matrix.
+        n_iter : int, optional
+            Maximum number of iterations to run before returning the zero. Increasing this can yield better accuracy
+            for some functions. The default is 10000.
+        h : float, optional
+            Finite difference to use when estimating jacobian. Defaults to 1e-5, providing good accuracy and robustness
+            to floating-point errors. Only used when jacobian is None.
+        loop_tolerance : float, optional
+            Tolerance for determining convergence of Newton's method. The default is machine epsilon (usually ≈ 1e-16).
+        comp_tolerance : float, optional
+            Tolerance for determining whether a point is a zero. The default is 1e-9.
+        simplified : bool, optional
+            Whether to use the simplified Newton's method. Default is False, not using simplified method. See Notes for
+            descriptions of what simplified method entails.
 
         Returns
         -------
-        Tuple[NDArray[np.float64], NDArray[np.int64]] :
-            Array of results.
+        Tuple[NDArray[np.float64], NDArray[np.uint8]]
+            Tuple of estimated zero and number of iterations for convergence of Newton's method.
         """
 
         zeros = np.zeros_like(X)
         iters = np.zeros_like(X[0,...], dtype=np.uint8)
         for i, j in tqdm.tqdm(itertools.product(range(X.shape[1]), range(X.shape[2])),
                               total=X.shape[1] * X.shape[2], smoothing=0, desc="Computing zeros"):
-            zeros[:, i, j], iters[i, j] = ufunc(function, X[:, i, j], jacobian, n_iter, h, loop_tolerance,
+            zeros[:, i, j], iters[i, j] = func(function, X[:, i, j], jacobian, n_iter, h, loop_tolerance,
                                                 comp_tolerance, simplified)
         return zeros, iters
 
@@ -237,7 +265,7 @@ class Fractal2D(object):
 
         Returns
         -------
-        x_n : Tuple[NDArray[np.float64], NDArray[np.int64]]
+        Tuple[NDArray[np.float64], NDArray[np.int64]]
             Zero point for function estimated from the initial point x_0 and the number of iterations for convergence.
             If Newton's method fails to converge, [np.nan, np.nan] is returned.
         """

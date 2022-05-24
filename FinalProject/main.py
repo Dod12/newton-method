@@ -1,6 +1,6 @@
 from numpy.typing import NDArray
 
-from FinalProject import Fractal2D, Fractal2D_old
+from FinalProject import Fractal2D
 import numpy as np
 from logging import getLogger
 import matplotlib
@@ -28,10 +28,7 @@ def jacobian1(X: NDArray[np.float64], out: NDArray[np.float64]) -> NDArray[np.fl
 
 
 fractal1 = Fractal2D(function=function1, jacobian=jacobian1, compile=True)
-fractal1.plot(100, -1, 1, -1, 1)
-
-
-# fractal2.plot(100, -1, 1, -1, 1)
+fractal1.plot(1000, -1, 1, -1, 1)
 
 def fcn_3(X: NDArray[np.float64], out: NDArray[np.float64]) -> NDArray[np.float64]:
     x1 = X[0]
@@ -42,8 +39,4 @@ def fcn_3(X: NDArray[np.float64], out: NDArray[np.float64]) -> NDArray[np.float6
 
 
 fractal3 = Fractal2D(function=fcn_3, compile=True)
-fractal3.plot(100, -1, 1, -1, 1)
-#fractal4 = Fractal2D_old(function=fcn_3)
-# print("Second equation")
-#fractal3.plot(100,-1,1,-1,1)
-#fractal4.plot(100,-1,1,-1,1)
+fractal3.plot(1000, -1, 1, -1, 1)
