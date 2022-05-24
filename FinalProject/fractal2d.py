@@ -92,7 +92,7 @@ class Fractal2D(object):
         self.iters = None
         self.roots = None
 
-    def plot(self, N: int, a: float, b: float, c: float, d: float):
+    def plot(self, N: int, a: float, b: float, c: float, d: float, show_iterations: bool = False, C_backend: int = 0):
         """
         This method plots the fractal
 
@@ -108,11 +108,14 @@ class Fractal2D(object):
             starting point of y  axes
         d : float
             ending point of y axes
+        show_iterations : bool
+            Plot fractal with iterations mask overlaid.
+        C_backend : int
+            Use optimized C backend for Newton's method. This is around 36 times faster.
 
         Returns
         -------
-        None.
-
+        matplotlib.figure.Figure : Figure instance of plot.
         """
 
         # Define the grid of points to calculate and transform them to an array.
@@ -120,13 +123,28 @@ class Fractal2D(object):
         self.roots = np.zeros_like(grid)
         self.iters = np.zeros_like(grid[0, ...])
         self.A = np.zeros_like(grid[0, ...])
-        self.roots, self.iters = self._loop_helper(self._newton_helper, self.function, grid, jacobian=self.jacobian,
-                                                   n_iter=self.n_iter, h=self.h, loop_tolerance=self.loop_tolerance,
-                                                   comp_tolerance=self.comp_tolerance, simplified=self.simplified)
-
-        self.A = self.newton_index(self.roots)
-        self.mesh = plt.imshow(self.A, extent=[a, b, c, d], origin="lower", aspect="equal", interpolation=None)
-        plt.show(block=True)
+        if C_backend:
+            try:
+                import py_newton
+            except ImportError:
+                C_backend = False
+                warning("Failed to import C backend. Defaulting to python implementation.")
+        if C_backend:
+                self.A = py_newton.newton_meshgrid(N, a, b, c, d, C_backend)
+        else:
+            self.roots, self.iters = self._loop_helper(self._newton_helper, self.function, grid, jacobian=self.jacobian,
+                                                       n_iter=self.n_iter, h=self.h, loop_tolerance=self.loop_tolerance,
+                                                       comp_tolerance=self.comp_tolerance, simplified=self.simplified)
+            self.A = self.newton_index(self.roots)
+        if show_iterations:
+            alpha = (self.iters - self.iters.min()) / (self.iters.max() - self.iters.min())
+        else:
+            alpha = None
+        self.figure = plt.imshow(self.A, extent=[a, b, c, d], alpha=alpha,
+                                 origin="lower", aspect="equal", interpolation=None).get_figure()
+        self.figure.tight_layout()
+        self.figure.show()
+        return self.figure
 
         # ToDo: add dependance on Simplified, make some fcns to make a simplified newton method.
 
@@ -150,9 +168,9 @@ class Fractal2D(object):
     def _loop_helper(ufunc: Callable, function: Union[Callable, None], X: NDArray[Real],
                      jacobian: Union[Callable, None] = None, n_iter: int = 10000, h: float = 1e-5,
                      loop_tolerance: float = np.finfo(np.float64).eps, comp_tolerance: float = 1e-9,
-                     simplified: bool = False) -> Tuple[NDArray[np.float64], NDArray[np.int64]]:
+                     simplified: bool = False) -> Tuple[NDArray[np.float64], NDArray[np.uint8]]:
         """
-        Helper function to call a function over an array of elements using parallelism.
+        Helper function to call a function over an array of elements.
 
         Parameters
         ----------
@@ -172,7 +190,7 @@ class Fractal2D(object):
         """
 
         zeros = np.zeros_like(X)
-        iters = np.zeros_like(X[0,...])
+        iters = np.zeros_like(X[0,...], dtype=np.uint8)
         for i, j in tqdm.tqdm(itertools.product(range(X.shape[1]), range(X.shape[2])),
                               total=X.shape[1] * X.shape[2], smoothing=0, desc="Computing zeros"):
             zeros[:, i, j], iters[i, j] = ufunc(function, X[:, i, j], jacobian, n_iter, h, loop_tolerance,

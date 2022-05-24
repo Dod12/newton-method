@@ -3,7 +3,8 @@ from numpy.typing import NDArray
 from FinalProject import Fractal2D, Fractal2D_old
 import numpy as np
 from logging import getLogger
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("MacOSX")
 
 getLogger("root").setLevel("WARNING")
 
@@ -41,7 +42,7 @@ def fcn_3(X: NDArray[np.float64], out: NDArray[np.float64]) -> NDArray[np.float6
 
 
 fractal3 = Fractal2D(function=fcn_3, compile=True)
-fractal3.plot(5, -1, 1, -1, 1)
+fractal3.plot(100, -1, 1, -1, 1)
 #fractal4 = Fractal2D_old(function=fcn_3)
 # print("Second equation")
 #fractal3.plot(100,-1,1,-1,1)
